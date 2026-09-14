@@ -168,8 +168,11 @@ function export_data()
     -- Read blocked domains
     if fs.access("/var/run/dnsmasq/gl_dpi.conf") then
         local domains = {}
-        for domain in io.lines("/var/run/dnsmasq/gl_dpi.conf"):gmatch("ipset=/([^/]+)/GL_DPI_BLOCK") do
-            table.insert(domains, domain)
+        local content = fs.readfile("/var/run/dnsmasq/gl_dpi.conf")
+        if content then
+            for domain in content:gmatch("ipset=/([^/]+)/GL_DPI_BLOCK") do
+                table.insert(domains, domain)
+            end
         end
         data.blocked_domains = domains
     end
