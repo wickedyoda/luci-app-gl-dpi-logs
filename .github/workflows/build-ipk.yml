@@ -47,15 +47,18 @@ jobs:
       - name: Write control file
         run: |
           printf 'Package: luci-app-gl-dpi-logs\nVersion: %s\nSection: luci\nArchitecture: all\nMaintainer: WickedYoda\nDepends: luci-base, luci-lib-jsonc\nDescription: LuCI app for exporting DPI and content filtering logs from GL.iNet routers\n This app reads QoS and content protection statistics from GL.iNet routers, displays them in the LuCI web UI, and allows export to JSON or CSV format.\n' "${PKG_VERSION}" > /tmp/pkgbuild/CONTROL/control
+          echo "2.0" > /tmp/pkgbuild/CONTROL/debian-binary
 
       - name: Build IPK
         run: |
           cd /tmp
-          tar --group=0 --owner=0 -czf pkgbuild/CONTROL.tar.gz -C pkgbuild CONTROL
-          tar --group=0 --owner=0 -czf pkgbuild/data.tar.gz -C pkgbuild usr etc
-          ar rcs /tmp/pkgbuild/luci-app-gl-dpi-logs_${PKG_VERSION}_all.ipk \
-            /tmp/pkgbuild/CONTROL.tar.gz \
-            /tmp/pkgbuild/data.tar.gz
+          # IPK format: debian-binary + control.tar.gz + data.tar.gz (ar archive)
+          tar --group=0 --owner=0 -czf /tmp/pkgbuild/control.tar.gz -C /tmp/pkgbuild CONTROL
+          tar --group=0 --owner=0 -czf /tmp/pkgbuild/data.tar.gz -C /tmp/pkgbuild usr etc
+          echo "2.0" | gzip > /tmp/pkgbuild/debian-binary
+          cd /tmp/pkgbuild
+          ar rcs luci-app-gl-dpi-logs_${PKG_VERSION}_all.ipk \
+            debian-binary control.tar.gz data.tar.gz
 
       - name: Create manual install archive
         run: |
