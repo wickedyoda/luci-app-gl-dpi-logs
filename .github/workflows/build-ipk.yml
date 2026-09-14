@@ -3,13 +3,10 @@ name: Build OpenWrt Package
 on:
   push:
     branches: [main]
-    tags: ['v*']
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
-  actions: read
 
 jobs:
   build-ipk:
@@ -18,25 +15,31 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up env
-        run: echo "PKG_VERSION=$(git describe --tags --always --abbrev=0 2>/dev/null || echo '1.0.0')" >> $GITHUB_ENV
+        run: |
+          # Extract version from most recent tag (format: v1.XX)
+          TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.00")
+          echo "BASE_TAG=${TAG}" >> $GITHUB_ENV
+          echo "PKG_VERSION=${TAG#v}" >> $GITHUB_ENV
 
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             build-essential libncurses5-dev zlib1g-dev gawk flex \
-            quilt git libssl-dev xxd rsync unzip python3
+            quilt git libssl-dev xxd rsync unzip python3 dpkg-dev
 
       - name: Create package directory structure
         run: |
+          mkdir -p /tmp/pkgbuild/DEBIAN
           mkdir -p /tmp/pkgbuild/usr/lib/lua/luci/controller
           mkdir -p /tmp/pkgbuild/usr/lib/lua/luci/model/cbi/gl-dpi-logs
           mkdir -p /tmp/pkgbuild/usr/lib/lua/luci/view/gl-dpi-logs
           mkdir -p /tmp/pkgbuild/usr/share/luci/menu.d
           mkdir -p /tmp/pkgbuild/etc/config
-          mkdir -p /tmp/pkgbuild/CONTROL
 
           cp luasrc/controller/gl_dpi_logs.lua /tmp/pkgbuild/usr/lib/lua/luci/controller/
           cp luasrc/model/cbi/gl-dpi-logs/overview.lua /tmp/pkgbuild/usr/lib/lua/luci/model/cbi/gl-dpi-logs/
@@ -46,27 +49,19 @@ jobs:
 
       - name: Write control file
         run: |
-          printf 'Package: luci-app-gl-dpi-logs\nVersion: %s\nSection: luci\nArchitecture: all\nMaintainer: WickedYoda\nDepends: luci-base, luci-lib-jsonc\nDescription: LuCI app for exporting DPI and content filtering logs from GL.iNet routers\n This app reads QoS and content protection statistics from GL.iNet routers, displays them in the LuCI web UI, and allows export to JSON or CSV format.\n' "${PKG_VERSION}" > /tmp/pkgbuild/CONTROL/control
-          echo "2.0" > /tmp/pkgbuild/CONTROL/debian-binary
+          printf 'Package: luci-app-gl-dpi-logs-v%s\nVersion: 1.%s\nSection: luci\nArchitecture: all\nMaintainer: WickedYoda\nDepends: luci-base, luci-lib-jsonc\nDescription: LuCI app for exporting DPI and content filtering logs from GL.iNet routers\n This app reads QoS and content protection statistics from GL.iNet routers,\n displays them in the LuCI web UI, and allows export to JSON or CSV format.\n' "${PKG_VERSION}" "${PKG_VERSION}" > /tmp/pkgbuild/DEBIAN/control
 
-      - name: Build IPK
+      - name: Build IPK with dpkg-deb
         run: |
           cd /tmp
-          # IPK format: ar archive with debian-binary + control.tar.gz + data.tar.gz
-          # control.tar.gz contains the 'control' file at root level (not inside CONTROL/)
-          cd /tmp/pkgbuild/CONTROL
-          tar --group=0 --owner=0 -czf /tmp/pkgbuild/control.tar.gz control
-          cd /tmp/pkgbuild
-          tar --group=0 --owner=0 -czf data.tar.gz usr etc
-          echo -n "2.0" > debian-binary
-          ar rcs luci-app-gl-dpi-logs_${PKG_VERSION}_all.ipk \
-            debian-binary control.tar.gz data.tar.gz
+          dpkg-deb -Z gzip --build --root-owner-group /tmp/pkgbuild \
+            /tmp/luci-app-gl-dpi-logs-v${PKG_VERSION}_all.ipk
 
       - name: Create manual install archive
         run: |
           mkdir -p /tmp/artifacts
-          cp /tmp/pkgbuild/luci-app-gl-dpi-logs_${PKG_VERSION}_all.ipk /tmp/artifacts/
-          tar -czf /tmp/artifacts/luci-app-gl-dpi-logs-${PKG_VERSION}-manual.tar.gz \
+          cp /tmp/luci-app-gl-dpi-logs-v${PKG_VERSION}_all.ipk /tmp/artifacts/
+          tar -czf /tmp/artifacts/luci-app-gl-dpi-logs-v${PKG_VERSION}-manual.tar.gz \
             -C /tmp/pkgbuild usr etc
 
       - name: Upload artifacts
@@ -75,14 +70,8 @@ jobs:
           name: ipk-artifact
           path: /tmp/artifacts/
 
-      - name: Create Release (on tag)
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: /tmp/artifacts/*
-
-      - name: Create Release (on push to main)
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      - name: Create Release (manual trigger only)
+        if: github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
           files: /tmp/artifacts/*
