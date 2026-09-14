@@ -52,11 +52,13 @@ jobs:
       - name: Build IPK
         run: |
           cd /tmp
-          # IPK format: debian-binary + control.tar.gz + data.tar.gz (ar archive)
-          tar --group=0 --owner=0 -czf /tmp/pkgbuild/control.tar.gz -C /tmp/pkgbuild CONTROL
-          tar --group=0 --owner=0 -czf /tmp/pkgbuild/data.tar.gz -C /tmp/pkgbuild usr etc
-          echo "2.0" | gzip > /tmp/pkgbuild/debian-binary
+          # IPK format: ar archive with debian-binary + control.tar.gz + data.tar.gz
+          # control.tar.gz contains the 'control' file at root level (not inside CONTROL/)
+          cd /tmp/pkgbuild/CONTROL
+          tar --group=0 --owner=0 -czf /tmp/pkgbuild/control.tar.gz control
           cd /tmp/pkgbuild
+          tar --group=0 --owner=0 -czf data.tar.gz usr etc
+          echo -n "2.0" > debian-binary
           ar rcs luci-app-gl-dpi-logs_${PKG_VERSION}_all.ipk \
             debian-binary control.tar.gz data.tar.gz
 
