@@ -1,0 +1,106 @@
+<%+luci.http.cominfo_header()%>
+<%+luci.http.headconfig()%>
+
+<script type="text/javascript">
+// Fetch DPI data via AJAX and display it
+function refreshStats() {
+    XHR.get('<%=url("admin/services/gl_dpi_logs/data")%>', null, function(json) {
+        var container = document.getElementById('dpi-stats-container');
+        if (!container || !json) return;
+
+        var html = '';
+
+        // QoS Statistics
+        html += '<div class="dashboard-widget">';
+        html += '<h3>DPI Statistics</h3>';
+        if (json.qos_stats) {
+            html += '<table class="table">';
+            for (var key in json.qos_stats) {
+                html += '<tr>';
+                html += '<td>' + key.replace(/_/g, ' ') + '</td>';
+                html += '<td>' + json.qos_stats[key] + '</td>';
+                html += '</tr>';
+            }
+            html += '</table>';
+        }
+        html += '</div>';
+
+        // Content Protection
+        html += '<div class="dashboard-widget">';
+        html += '<h3>Content Filtering</h3>';
+        if (json.content_protection) {
+            html += '<table class="table">';
+            for (var key in json.content_protection) {
+                html += '<tr>';
+                html += '<td>' + key.replace(/_/g, ' ') + '</td>';
+                html += '<td>' + json.content_protection[key] + '</td>';
+                html += '</tr>';
+            }
+            html += '</table>';
+        }
+        html += '</div>';
+
+        // Firewall counters
+        html += '<div class="dashboard-widget">';
+        html += '<h3>Firewall Drop Counters</h3>';
+        if (json.firewall_counters && json.firewall_counters.raw) {
+            html += '<pre>' + json.firewall_counters.raw + '</pre>';
+        }
+        html += '</div>';
+
+        // Netify status
+        html += '<div class="dashboard-widget">';
+        html += '<h3>Netify DPI Engine</h3>';
+        if (json.netify_info) {
+            html += '<table class="table">';
+            html += '<tr><td>Running</td><td>' + (json.netify_info.running ? 'Yes' : 'No') + '</td></tr>';
+            if (json.netify_info.pid) {
+                html += '<tr><td>PID</td><td>' + json.netify_info.pid + '</td></tr>';
+            }
+            html += '</table>';
+        }
+        html += '</div>';
+
+        // Export buttons
+        html += '<div class="dashboard-widget">';
+        html += '<h3>Export Options</h3>';
+        html += '<button onclick="exportData(\'json\')" class="btn btn-primary">Export JSON</button> ';
+        html += '<button onclick="exportData(\'csv\')" class="btn btn-secondary">Export CSV</button>';
+        html += '</div>';
+
+        // Raw stats display
+        html += '<div class="dashboard-widget">';
+        html += '<h3>Raw Statistics Files</h3>';
+        html += '<h4>QoS Stats (/tmp/qos_stats)</h4>';
+        if (json.qos_stats && json.qos_stats.date) {
+            html += '<p><strong>Date:</strong> ' + json.qos_stats.date + '</p>';
+        }
+        html += '<h4>Content Protection (/tmp/content_protection_stats)</h4>';
+        if (json.content_protection && json.content_protection.date) {
+            html += '<p><strong>Date:</strong> ' + json.content_protection.date + '</p>';
+        }
+        html += '</div>';
+
+        container.innerHTML = html;
+    });
+}
+
+function exportData(format) {
+    window.location.href = '<%=url("admin/services/gl_dpi_logs/export")%>?format=' + format;
+}
+
+// Auto-refresh every 30 seconds
+setInterval(refreshStats, 30000);
+document.addEventListener("DOMContentLoaded", refreshStats);
+</script>
+
+<style>
+.dashboard-widget { margin-bottom: 20px; }
+.table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+.table td, .table th { border: 1px solid #ddd; padding: 6px; text-align: left; }
+.table th { background-color: #f8f9fa; }
+pre { background: #f8f9fa; padding: 10px; border-radius: 4px; white-space: pre-wrap; }
+</style>
+
+<h2>DPI Logs</h2>
+<div id="dpi-stats-container">Loading...</div>

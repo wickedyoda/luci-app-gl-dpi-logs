@@ -1,0 +1,12 @@
+## Return chain for gl_dpi_logs
+
+require iptables-mod-tproxy
+require kmod-nf-nat
+
+## Configuration defaults
+
+config gl_dpi_logs 'config'
+	option enabled '1'
+	option export_format 'json'
+
+## End of file
