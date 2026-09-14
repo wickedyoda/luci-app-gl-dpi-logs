@@ -20,7 +20,6 @@ jobs:
 
       - name: Set up env
         run: |
-          # Count existing v1.NN tags, increment for next build
           EXISTING=$(git tag --list 'v1.[0-9][0-9]' | wc -l)
           BUILD=$((EXISTING + 1))
           BUILD_PADDED=$(printf "v1.%02d" $BUILD)
@@ -35,7 +34,6 @@ jobs:
 
       - name: Create package directory structure
         run: |
-          mkdir -p /tmp/pkgbuild/DEBIAN
           mkdir -p /tmp/pkgbuild/usr/lib/lua/luci/controller
           mkdir -p /tmp/pkgbuild/usr/lib/lua/luci/model/cbi/gl-dpi-logs
           mkdir -p /tmp/pkgbuild/usr/lib/lua/luci/view/gl-dpi-logs
@@ -50,12 +48,18 @@ jobs:
 
       - name: Write control file
         run: |
-          printf 'Package: luci-app-gl-dpi-logs-%s\nVersion: %s\nSection: luci\nArchitecture: all\nMaintainer: WickedYoda\nDepends: luci-base, luci-lib-jsonc\nDescription: LuCI app for exporting DPI and content filtering logs from GL.iNet routers\n This app reads QoS and content protection statistics from GL.iNet routers,\n displays them in the LuCI web UI, and allows export to JSON or CSV format.\n' "${PKG_RELEASE}" "${BUILD_VERSION}" > /tmp/pkgbuild/DEBIAN/control
+          printf 'Package: luci-app-gl-dpi-logs-%s\nVersion: %s\nSection: luci\nArchitecture: all\nMaintainer: WickedYoda\nDepends: luci-base, luci-lib-jsonc\nDescription: LuCI app for exporting DPI and content filtering logs from GL.iNet routers\n This app reads QoS and content protection statistics from GL.iNet routers,\n displays them in the LuCI web UI, and allows export to JSON or CSV format.\n' "${PKG_RELEASE}" "${BUILD_VERSION}" > /tmp/pkgbuild/control
 
-      - name: Build IPK (GNU ar format for OpenWrt opkg compatibility)
+      - name: Write postinst
+        run: |
+          mkdir -p /tmp/pkgbuild
+          printf '#!/bin/sh\nmkdir -p /usr/lib/lua/luci/view/gl-dpi-logs\nmkdir -p /usr/lib/lua/luci/model/cbi/gl-dpi-logs\nexit 0\n' > /tmp/pkgbuild/postinst
+          chmod 755 /tmp/pkgbuild/postinst
+
+      - name: Build IPK (gzip-compressed tar format for GL.iNet/OpenWrt)
         run: |
           python3 << 'PYEOF'
-          import os, tarfile, io
+          import os, tarfile, io, gzip
 
           pkg_release = os.environ["PKG_RELEASE"]
           build_version = os.environ["BUILD_VERSION"]
@@ -63,65 +67,86 @@ jobs:
           output_ipk = f"/tmp/luci-app-gl-dpi-logs-{pkg_release}_{build_version}_all.ipk"
 
           # Read control file
-          with open(f"{src_dir}/DEBIAN/control", "r") as f:
+          with open(f"{src_dir}/control", "r") as f:
               control_content = f.read().encode("utf-8")
 
-          # debian-binary: must be "2.0\n" (4 bytes, with newline)
+          # postinst script
+          postinst = b"#!/bin/sh\nmkdir -p /usr/lib/lua/luci/view/gl-dpi-logs\nmkdir -p /usr/lib/lua/luci/model/cbi/gl-dpi-logs\nexit 0\n"
+
+          # debian-binary
           debian_binary = b"2.0\n"
 
-          # Build control.tar.gz - control at root, NO ./ prefix
+          # Build control.tar.gz - contains ./control and ./postinst
           control_tgz_buf = io.BytesIO()
           with tarfile.open(fileobj=control_tgz_buf, mode="w:gz") as tar:
-              info = tarfile.TarInfo(name="control")
+              info = tarfile.TarInfo(name="./control")
               info.size = len(control_content)
               info.mode = 0o644
-              info.uid = 0
-              info.gid = 0
-              info.uname = ""
-              info.gname = ""
-              info.mtime = 0
+              info.uid = 0; info.gid = 0; info.uname = ""; info.gname = ""; info.mtime = 0
               tar.addfile(info, io.BytesIO(control_content))
+              pinfo = tarfile.TarInfo(name="./postinst")
+              pinfo.size = len(postinst)
+              pinfo.mode = 0o755
+              pinfo.uid = 0; pinfo.gid = 0; pinfo.uname = ""; pinfo.gname = ""; pinfo.mtime = 0
+              tar.addfile(pinfo, io.BytesIO(postinst))
           control_tgz = control_tgz_buf.getvalue()
 
-          # Build data.tar.gz - files at root, NO ./ prefix
-          data_tgz_buf = io.BytesIO()
-          with tarfile.open(fileobj=data_tgz_buf, mode="w:gz") as tar:
+          # Build data.tar.gz - WITH explicit directory entries
+          # GL.iNet OpenWrt 21.02 opkg needs dir entries to create parent dirs
+          data_buf = io.BytesIO()
+          with tarfile.open(fileobj=data_buf, mode="w:gz") as tar:
+              # Collect dirs and files
+              all_dirs = set()
+              files_to_add = []
               for root, dirs, files in os.walk(src_dir):
-                  for fname in files:
+                  for fname in sorted(files):
                       if root.endswith("DEBIAN"):
                           continue
+                      if fname in ("control", "postinst"):
+                          continue
                       fpath = os.path.join(root, fname)
-                      arcname = os.path.relpath(fpath, src_dir)
-                      info = tar.gettarinfo(fpath, arcname=arcname)
-                      info.uid = 0
-                      info.gid = 0
-                      info.uname = ""
-                      info.gname = ""
-                      info.mtime = 0
-                      with open(fpath, "rb") as f:
-                          tar.addfile(info, f)
-          data_tgz = data_tgz_buf.getvalue()
+                      relpath = os.path.relpath(fpath, src_dir)
+                      arcname = "./" + relpath
+                      files_to_add.append((fpath, arcname))
+                      parts = arcname.split("/")
+                      for i in range(2, len(parts)):
+                          all_dirs.add("/".join(parts[:i]))
+              # Add directories first
+              for dirpath in sorted(all_dirs):
+                  dinfo = tarfile.TarInfo(name=dirpath)
+                  dinfo.type = tarfile.DIRTYPE
+                  dinfo.mode = 0o755
+                  dinfo.uid = 0; dinfo.gid = 0; dinfo.uname = ""; dinfo.gname = ""; dinfo.mtime = 0
+                  tar.addfile(dinfo)
+              # Add files
+              for fpath, arcname in sorted(files_to_add, key=lambda x: x[1]):
+                  info = tar.gettarinfo(fpath, arcname=arcname)
+                  info.uid = 0; info.gid = 0; info.uname = ""; info.gname = ""; info.mtime = 0
+                  with open(fpath, "rb") as f:
+                      tar.addfile(info, f)
+          data_tgz = data_buf.getvalue()
 
-          # GNU ar archive format: name + "/" terminator, space-padded to 16 bytes
-          # OpenWrt's opkg (2021) expects this, NOT BSD format (spaces only)
-          def make_ar_entry(name, data):
-              name_field = (name + "/").encode("ascii").ljust(16, b" ")
-              mtime_field = b"0".ljust(12, b" ")
-              uid_field = b"0".ljust(6, b" ")
-              gid_field = b"0".ljust(6, b" ")
-              mode_field = b"644".ljust(8, b" ")
-              size_field = str(len(data)).encode("ascii").ljust(10, b" ")
-              end_magic = b"`\n"
-              header = name_field + mtime_field + uid_field + gid_field + mode_field + size_field + end_magic
-              result = header + data
-              if len(data) % 2 == 1:
-                  result += b"\n"
-              return result
+          # Outer: gzip-compressed tar containing debian-binary, control.tar.gz, data.tar.gz
+          # GL.iNet OpenWrt 21.02 uses gzip+tar format (NOT ar archive format)
+          ipk_buf = io.BytesIO()
+          tar_obj = tarfile.open(fileobj=ipk_buf, mode="w")
+          for name, data in [("./debian-binary", debian_binary),
+                             ("./control.tar.gz", control_tgz),
+                             ("./data.tar.gz", data_tgz)]:
+              info = tarfile.TarInfo(name=name)
+              info.size = len(data)
+              info.mode = 0o644
+              info.uid = 0; info.gid = 0; info.uname = ""; info.gname = ""; info.mtime = 0
+              tar_obj.addfile(info, io.BytesIO(data))
+          tar_obj.close()
+          outer_tar = ipk_buf.getvalue()
 
-          ipk_data = b"!<arch>\n"
-          ipk_data += make_ar_entry("debian-binary", debian_binary)
-          ipk_data += make_ar_entry("control.tar.gz", control_tgz)
-          ipk_data += make_ar_entry("data.tar.gz", data_tgz)
+          # Gzip compress with mtime=0, os=3 (Unix), XFL=0 (default compression)
+          ipk_buf2 = io.BytesIO()
+          with gzip.GzipFile(fileobj=ipk_buf2, mode="wb", mtime=0, compresslevel=6) as gz:
+              gz.write(outer_tar)
+          ipk_data = ipk_buf2.getvalue()
+          ipk_data = ipk_data[:9] + b"\x03" + ipk_data[10:]  # OS=3 (Unix)
 
           with open(output_ipk, "wb") as f:
               f.write(ipk_data)
@@ -152,3 +177,11 @@ jobs:
           files: /tmp/artifacts/*
           tag_name: v${{ env.PKG_VERSION }}
           overwrite_files: true
+
+      - name: Create Release (push to main only)
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ipk-build-push
+          path: /tmp/artifacts/
+          if-no-files-fall-through: true
