@@ -1,0 +1,75 @@
+name: Build OpenWrt Package
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  release:
+    types: [published]
+
+jobs:
+  build-ipk:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up env
+        run: echo "PKG_VERSION=$(git describe --tags --always --abbrev=0 2>/dev/null || echo '1.0.0')" >> $GITHUB_ENV
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential libncurses5-dev zlib1g-dev gawk flex \
+            quilt git libssl-dev xxd rsync unzip python3
+
+      - name: Create package directory structure
+        run: |
+          mkdir -p /tmp/pkgbuild/usr/lib/lua/luci/controller
+          mkdir -p /tmp/pkgbuild/usr/lib/lua/luci/model/cbi/gl-dpi-logs
+          mkdir -p /tmp/pkgbuild/usr/lib/lua/luci/view/gl-dpi-logs
+          mkdir -p /tmp/pkgbuild/usr/share/luci/menu.d
+          mkdir -p /tmp/pkgbuild/etc/config
+          mkdir -p /tmp/pkgbuild/CONTROL
+
+          cp luasrc/controller/gl_dpi_logs.lua /tmp/pkgbuild/usr/lib/lua/luci/controller/
+          cp luasrc/model/cbi/gl-dpi-logs/overview.lua /tmp/pkgbuild/usr/lib/lua/luci/model/cbi/gl-dpi-logs/
+          cp luasrc/view/gl-dpi-logs/overview.htm /tmp/pkgbuild/usr/lib/lua/luci/view/gl-dpi-logs/
+          cp root/usr/share/luci/menu.d/gl-dpi-logs.json /tmp/pkgbuild/usr/share/luci/menu.d/
+          cp files/etc/config/gl_dpi_logs /tmp/pkgbuild/etc/config/
+
+      - name: Write control file
+        run: |
+          printf 'Package: luci-app-gl-dpi-logs\nVersion: %s\nSection: luci\nArchitecture: all\nMaintainer: WickedYoda\nDepends: luci-base, luci-lib-jsonc\nDescription: LuCI app for exporting DPI and content filtering logs from GL.iNet routers\n This app reads QoS and content protection statistics from GL.iNet routers, displays them in the LuCI web UI, and allows export to JSON or CSV format.\n' "${PKG_VERSION}" > /tmp/pkgbuild/CONTROL/control
+
+      - name: Build IPK
+        run: |
+          cd /tmp
+          tar --group=0 --owner=0 -czf pkgbuild/CONTROL.tar.gz -C pkgbuild CONTROL
+          tar --group=0 --owner=0 -czf pkgbuild/data.tar.gz -C pkgbuild usr etc
+          ar rcs /tmp/pkgbuild/luci-app-gl-dpi-logs_${PKG_VERSION}_all.ipk \
+            /tmp/pkgbuild/CONTROL.tar.gz \
+            /tmp/pkgbuild/data.tar.gz
+
+      - name: Create manual install archive
+        run: |
+          mkdir -p /tmp/artifacts
+          cp /tmp/pkgbuild/luci-app-gl-dpi-logs_${PKG_VERSION}_all.ipk /tmp/artifacts/
+          tar -czf /tmp/artifacts/luci-app-gl-dpi-logs-${PKG_VERSION}-manual.tar.gz \
+            -C /tmp/pkgbuild usr etc
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ipk-artifact
+          path: /tmp/artifacts/
+
+      - name: Create Release
+        if: github.event_name == 'push' || github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: /tmp/artifacts/*
+          tag_name: v${{ env.PKG_VERSION }}
