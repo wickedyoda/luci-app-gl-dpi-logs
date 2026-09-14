@@ -68,8 +68,9 @@ jobs:
           path: /tmp/artifacts/
 
       - name: Create Release
-        if: github.event_name == 'push' || github.event_name == 'release'
+        if: github.event_name == 'release' || github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           files: /tmp/artifacts/*
           tag_name: v${{ env.PKG_VERSION }}
+          token: ${{ secrets.GH_PAT_RELEASE }}
