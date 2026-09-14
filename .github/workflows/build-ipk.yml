@@ -20,7 +20,7 @@ jobs:
 
       - name: Set up env
         run: |
-          # Determine build number: count existing v1.NN tags, increment
+          # Count existing v1.NN tags, increment for next build
           EXISTING=$(git tag --list 'v1.[0-9][0-9]' | wc -l)
           BUILD=$((EXISTING + 1))
           BUILD_PADDED=$(printf "v1.%02d" $BUILD)
@@ -31,7 +31,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential python3
+          sudo apt-get install -y python3
 
       - name: Create package directory structure
         run: |
@@ -52,10 +52,10 @@ jobs:
         run: |
           printf 'Package: luci-app-gl-dpi-logs-%s\nVersion: %s\nSection: luci\nArchitecture: all\nMaintainer: WickedYoda\nDepends: luci-base, luci-lib-jsonc\nDescription: LuCI app for exporting DPI and content filtering logs from GL.iNet routers\n This app reads QoS and content protection statistics from GL.iNet routers,\n displays them in the LuCI web UI, and allows export to JSON or CSV format.\n' "${PKG_RELEASE}" "${BUILD_VERSION}" > /tmp/pkgbuild/DEBIAN/control
 
-      - name: Build IPK (Python ar archive builder)
+      - name: Build IPK (GNU ar format for OpenWrt opkg compatibility)
         run: |
           python3 << 'PYEOF'
-          import struct, os, tarfile, io, shutil
+          import os, tarfile, io
 
           pkg_release = os.environ["PKG_RELEASE"]
           build_version = os.environ["BUILD_VERSION"]
@@ -66,10 +66,10 @@ jobs:
           with open(f"{src_dir}/DEBIAN/control", "r") as f:
               control_content = f.read().encode("utf-8")
 
-          # debian-binary: must be "2.0\n" (4 bytes)
+          # debian-binary: must be "2.0\n" (4 bytes, with newline)
           debian_binary = b"2.0\n"
 
-          # Build control.tar.gz - control at root, no ./ prefix
+          # Build control.tar.gz - control at root, NO ./ prefix
           control_tgz_buf = io.BytesIO()
           with tarfile.open(fileobj=control_tgz_buf, mode="w:gz") as tar:
               info = tarfile.TarInfo(name="control")
@@ -83,37 +83,42 @@ jobs:
               tar.addfile(info, io.BytesIO(control_content))
           control_tgz = control_tgz_buf.getvalue()
 
-          # Build data.tar.gz - files at root, no ./ prefix
+          # Build data.tar.gz - files at root, NO ./ prefix
           data_tgz_buf = io.BytesIO()
           with tarfile.open(fileobj=data_tgz_buf, mode="w:gz") as tar:
               for root, dirs, files in os.walk(src_dir):
                   for fname in files:
+                      if root.endswith("DEBIAN"):
+                          continue
                       fpath = os.path.join(root, fname)
                       arcname = os.path.relpath(fpath, src_dir)
-                      # Ensure uid/gid are 0 for determinism
-                      tar.add(fpath, arcname=arcname)
-              # Reset ownership in the tar
+                      info = tar.gettarinfo(fpath, arcname=arcname)
+                      info.uid = 0
+                      info.gid = 0
+                      info.uname = ""
+                      info.gname = ""
+                      info.mtime = 0
+                      with open(fpath, "rb") as f:
+                          tar.addfile(info, f)
           data_tgz = data_tgz_buf.getvalue()
 
-          # Build ar archive manually
+          # GNU ar archive format: name + "/" terminator, space-padded to 16 bytes
+          # OpenWrt's opkg (2021) expects this, NOT BSD format (spaces only)
           def make_ar_entry(name, data):
-              """Create ar entry: 16-byte name, 12 mtime, 6 uid, 6 gid, 8 mode, 10 size, 2 end"""
-              name_field = name.encode("ascii").ljust(16, b" ")
+              name_field = (name + "/").encode("ascii").ljust(16, b" ")
               mtime_field = b"0".ljust(12, b" ")
               uid_field = b"0".ljust(6, b" ")
               gid_field = b"0".ljust(6, b" ")
-              mode_field = b"644     "[:8]  # 8 bytes for mode field
+              mode_field = b"644".ljust(8, b" ")
               size_field = str(len(data)).encode("ascii").ljust(10, b" ")
               end_magic = b"`\n"
               header = name_field + mtime_field + uid_field + gid_field + mode_field + size_field + end_magic
               result = header + data
-              # ar requires even-length entries (pad with \n if odd)
               if len(data) % 2 == 1:
                   result += b"\n"
               return result
 
-          ar_magic = b"!<arch>\n"
-          ipk_data = ar_magic
+          ipk_data = b"!<arch>\n"
           ipk_data += make_ar_entry("debian-binary", debian_binary)
           ipk_data += make_ar_entry("control.tar.gz", control_tgz)
           ipk_data += make_ar_entry("data.tar.gz", data_tgz)
@@ -122,7 +127,6 @@ jobs:
               f.write(ipk_data)
           print(f"Built: {output_ipk} ({len(ipk_data)} bytes)")
 
-          # Also store path for artifact step
           with open("/tmp/ipk_path.txt", "w") as f:
               f.write(output_ipk)
           PYEOF
