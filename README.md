@@ -1,6 +1,6 @@
 # luci-app-gl-dpi-logs
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![License](https://img.shields.io/badge/license-GPLv3%20or%20later-blue.svg)
 ![OpenWrt](https://img.shields.io/badge/OpenWrt-21.02%2B-orange)
 ![GL.iNet](https://img.shields.io/badge/GL.iNet-Flint%204-lightgrey)
 
@@ -18,7 +18,8 @@ A LuCI app for exporting **DPI (Deep Packet Inspection)** and **Content Filterin
 
 ### Prerequisites
 
-- GL.iNet router (Flint 4 or any model running OpenWrt with Netify DPI)
+- GL.iNet Flint 4 router (tested on model **GL-AX1800 v2** running OpenWrt 21.02)
+  - *Other GL.iNet models may work but are untested — use at your own risk.*
 - SSH access to the router
 - At least 1MB free flash storage
 
