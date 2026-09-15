@@ -1,4 +1,6 @@
 -- CBI model for DPI Logs Overview
+-- Copyright (c) 2026 WickedYoda
+-- SPDX-License-Identifier: GPL-3.0-or-later
 local fs = require "nixio.fs"
 
 local qos_stats = ""
