@@ -1,5 +1,20 @@
 #!/usr/bin/env lua
--- LuCI Controller for GL.iNet DPI Logs Export App
+--[[
+ LuCI Controller for GL.iNet DPI Logs Export App
+ Copyright (c) 2026 WickedYoda
+ SPDX-License-Identifier: GPL-3.0-or-later
+
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+
+ This program is distributed WITHOUT ANY WARRANTY; without even the
+ implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ See the GNU General Public License for more details.
+
+ Full license text: https://www.gnu.org/licenses/gpl-3.0.html
+--]]
 
 module("luci.controller.gl_dpi_logs", package.seeall)
 
