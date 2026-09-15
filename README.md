@@ -110,4 +110,10 @@ cd luci-app-gl-dpi-logs
 
 ## License
 
-MIT
+GNU General Public License v3.0 (GPLv3) — see [LICENSE](LICENSE) for details.
+
+**Not open-source in the permissive sense:** This software is copyleft. You
+may use, modify, and distribute it provided you comply with the GPLv3 terms,
+including providing source code for derivative works. THE SOFTWARE IS PROVIDED
+"AS IS", WITHOUT WARRANTY OF ANY KIND. THE DEVELOPERS ARE NOT RESPONSIBLE
+FOR ANY ISSUES ARISING FROM USE. See [TOS.md](TOS.md) for full terms.
