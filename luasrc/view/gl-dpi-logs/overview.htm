@@ -45,10 +45,16 @@ function refreshStats() {
         html += '</div>';
         html += '<div class="dpi-section">';
         html += '<h3>Netify DPI Engine</h3>';
-        if (json.netify) {
-            html += '<div class="stat-item"><label>Blocked Domains:</label> <span>' + (json.blocked_domains ? json.blocked_domains.length : 0) + '</span></div>';
-            html += '<div class="stat-item"><label>Active Connections:</label> <span>' + (json.netify.active_connections || 0) + '</span></div>';
-            html += '<div class="stat-item"><label>Detections:</label> <span>' + (json.netify.detections || 0) + '</span></div>';
+        if (json.netify_info) {
+            if (json.netify_info.app_metadata_last_update) {
+                html += '<div class="stat-item"><label>App Metadata:</label> <span>' + json.netify_info.app_metadata_last_update + '</span></div>';
+            }
+            if (json.netify_info.pid) {
+                html += '<div class="stat-item"><label>Process:</label> <span>running (PID ' + json.netify_info.pid + ')</span></div>';
+            } else {
+                html += '<div class="stat-item"><label>Process:</label> <span>not running</span></div>';
+            }
+            html += '<div class="stat-item"><label>Blocked Domains:</label> <span>' + (json.blocked_domains_count || json.blocked_domains ? json.blocked_domains.length : 0) + ' (total: ' + (json.blocked_domains_count || 0) + ')</span></div>';
         } else {
             html += '<div class="stat-item">Netify data not available</div>';
         }
@@ -56,7 +62,9 @@ function refreshStats() {
         html += '<div class="dpi-section">';
         html += '<h3>Export Options</h3>';
         html += '<button onclick="exportData(\'json\')" class="btn btn-primary" style="margin-right:10px;">Export JSON</button>';
-        html += '<button onclick="exportData(\'csv\')" class="btn btn-secondary">Export CSV</button>';
+        html += '<button onclick="exportData(\'csv\')" class="btn btn-secondary" style="margin-right:10px;">Export CSV</button>';
+        html += '<button onclick="exportRawFiles()" class="btn btn-success" style="margin-right:10px;">Export Raw Files</button>';
+        html += '<button onclick="viewCliDetails()" class="btn" style="background:#6c757d;color:#fff;">CLI Details</button>';
         html += '</div>';
         html += '<div class="dpi-section">';
         html += '<h3>Raw Statistics Files</h3>';
@@ -96,6 +104,94 @@ function exportData(format) {
     };
     xhr.onerror = function() {
         alert('Export failed: network error');
+    };
+    xhr.send();
+}
+
+function exportRawFiles() {
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', '<%=url("admin/services/gl_dpi_logs_raw")%>', true);
+    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+    xhr.responseType = 'blob';
+    xhr.onload = function() {
+        if (xhr.status === 200) {
+            var blob = xhr.response;
+            var timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            var a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'dpi_raw_export_' + timestamp + '.json';
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(a.href);
+        } else {
+            alert('Raw export failed: HTTP ' + xhr.status);
+        }
+    };
+    xhr.onerror = function() {
+        alert('Raw export failed: network error');
+    };
+    xhr.send();
+}
+
+function viewCliDetails() {
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', '<%=url("admin/services/gl_dpi_logs_cli")%>', true);
+    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+    xhr.onload = function() {
+        if (xhr.status === 200) {
+            var json = JSON.parse(xhr.responseText);
+            var lines = [];
+            lines.push('=== CLI Details ===');
+            lines.push('Hostname: ' + (json.system && json.system.hostname || 'N/A'));
+            lines.push('Uptime: ' + (json.system && json.system.uptime || 'N/A') + ' seconds');
+            lines.push('');
+            lines.push('=== File Status ===');
+            if (json.files) {
+                for (var path in json.files) {
+                    var f = json.files[path];
+                    if (f.exists) {
+                        lines.push(path + ' — ' + f.size + ' bytes, mtime: ' + f.mtime);
+                    } else {
+                        lines.push(path + ' — MISSING');
+                    }
+                }
+            }
+            lines.push('');
+            lines.push('=== Domain Count ===');
+            if (json.domain_count) {
+                lines.push('Blocked domains: ' + json.domain_count);
+            } else {
+                lines.push('Domain count: N/A (gl_dpi.conf not found)');
+            }
+            lines.push('');
+            lines.push('=== iptables (parental_control) ===');
+            if (json.iptables) {
+                if (json.iptables.total_packets) {
+                    lines.push('Total packets: ' + json.iptables.total_packets);
+                    lines.push('Total bytes: ' + json.iptables.total_bytes);
+                }
+                if (json.iptables.raw) {
+                    lines.push('');
+                    lines.push('(Full raw output available in Export Raw Files)');
+                }
+            }
+            lines.push('');
+            lines.push('=== Netify Config ===');
+            if (json.netify_config) {
+                if (json.netify_config.app_metadata_size) {
+                    lines.push('app-metadata.json: ' + json.netify_config.app_metadata_size + ' bytes');
+                }
+            }
+            var txt = lines.join('\n');
+            alert(txt);
+        } else {
+            alert('CLI details failed: HTTP ' + xhr.status);
+        }
+    };
+    xhr.onerror = function() {
+        alert('CLI details failed: network error');
     };
     xhr.send();
 }
