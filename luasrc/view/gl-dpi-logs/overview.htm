@@ -1,106 +1,98 @@
-<%= luci.http.cominfo_header() %>
-<%= luci.http.headconfig() %>
+<%+header%>
 
-<script type="text/javascript">
-// Fetch DPI data via AJAX and display it
+<h2 name="content"><%:DPI Logs%></h2>
+
+<div id="dpi-stats-container">Loading...</div>
+
+<script type="text/javascript">//<![CDATA[
 function refreshStats() {
-    XHR.get('<%=url("admin/services/gl_dpi_logs/data")%>', null, function(json) {
-        var container = document.getElementById('dpi-stats-container');
+    var container = document.getElementById('dpi-stats-container');
+    if (!container) return;
+    XHR.get('<%=url("admin/services/gl_dpi_logs_data")%>', null, function(json) {
         if (!container || !json) return;
-
-        var html = '';
-
-        // QoS Statistics
-        html += '<div class="dashboard-widget">';
+        var html = '<div class="dpi-section">';
         html += '<h3>DPI Statistics</h3>';
         if (json.qos_stats) {
-            html += '<table class="table">';
             for (var key in json.qos_stats) {
-                html += '<tr>';
-                html += '<td>' + key.replace(/_/g, ' ') + '</td>';
-                html += '<td>' + json.qos_stats[key] + '</td>';
-                html += '</tr>';
+                if (key !== 'date') {
+                    html += '<div class="stat-item"><label>' + key + ':</label> <span>' + json.qos_stats[key] + '</span></div>';
+                }
             }
-            html += '</table>';
         }
         html += '</div>';
-
-        // Content Protection
-        html += '<div class="dashboard-widget">';
+        html += '<div class="dpi-section">';
         html += '<h3>Content Filtering</h3>';
         if (json.content_protection) {
-            html += '<table class="table">';
             for (var key in json.content_protection) {
-                html += '<tr>';
-                html += '<td>' + key.replace(/_/g, ' ') + '</td>';
-                html += '<td>' + json.content_protection[key] + '</td>';
-                html += '</tr>';
+                if (key !== 'date') {
+                    html += '<div class="stat-item"><label>' + key + ':</label> <span>' + json.content_protection[key] + '</span></div>';
+                }
             }
-            html += '</table>';
         }
         html += '</div>';
-
-        // Firewall counters
-        html += '<div class="dashboard-widget">';
+        html += '<div class="dpi-section">';
         html += '<h3>Firewall Drop Counters</h3>';
-        if (json.firewall_counters && json.firewall_counters.raw) {
-            html += '<pre>' + json.firewall_counters.raw + '</pre>';
-        }
+        html += '<div class="stat-item">iptables output available via CLI</div>';
         html += '</div>';
-
-        // Netify status
-        html += '<div class="dashboard-widget">';
+        html += '<div class="dpi-section">';
         html += '<h3>Netify DPI Engine</h3>';
-        if (json.netify_info) {
-            html += '<table class="table">';
-            html += '<tr><td>Running</td><td>' + (json.netify_info.running ? 'Yes' : 'No') + '</td></tr>';
-            if (json.netify_info.pid) {
-                html += '<tr><td>PID</td><td>' + json.netify_info.pid + '</td></tr>';
-            }
-            html += '</table>';
+        if (json.netify) {
+            html += '<div class="stat-item"><label>Blocked Domains:</label> <span>' + (json.blocked_domains ? json.blocked_domains.length : 0) + '</span></div>';
+            html += '<div class="stat-item"><label>Active Connections:</label> <span>' + (json.netify.active_connections || 0) + '</span></div>';
+            html += '<div class="stat-item"><label>Detections:</label> <span>' + (json.netify.detections || 0) + '</span></div>';
+        } else {
+            html += '<div class="stat-item">Netify data not available</div>';
         }
         html += '</div>';
-
-        // Export buttons
-        html += '<div class="dashboard-widget">';
+        html += '<div class="dpi-section">';
         html += '<h3>Export Options</h3>';
-        html += '<button onclick="exportData(\'json\')" class="btn btn-primary">Export JSON</button> ';
+        html += '<button onclick="exportData(\'json\')" class="btn btn-primary" style="margin-right:10px;">Export JSON</button>';
         html += '<button onclick="exportData(\'csv\')" class="btn btn-secondary">Export CSV</button>';
         html += '</div>';
-
-        // Raw stats display
-        html += '<div class="dashboard-widget">';
+        html += '<div class="dpi-section">';
         html += '<h3>Raw Statistics Files</h3>';
-        html += '<h4>QoS Stats (/tmp/qos_stats)</h4>';
-        if (json.qos_stats && json.qos_stats.date) {
-            html += '<p><strong>Date:</strong> ' + json.qos_stats.date + '</p>';
-        }
-        html += '<h4>Content Protection (/tmp/content_protection_stats)</h4>';
-        if (json.content_protection && json.content_protection.date) {
-            html += '<p><strong>Date:</strong> ' + json.content_protection.date + '</p>';
-        }
+        html += '<div class="stat-item"><label>QoS Stats:</label> <span>/tmp/qos_stats</span></div>';
+        html += '<div class="stat-item"><label>Content Protection:</label> <span>/tmp/content_protection_stats</span></div>';
         html += '</div>';
-
         container.innerHTML = html;
     });
 }
 
 function exportData(format) {
-    window.location.href = '<%=url("admin/services/gl_dpi_logs/export")%>?format=' + format;
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', '<%=url("admin/services/gl_dpi_logs_export")%>?format=' + format, true);
+    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+    xhr.responseType = 'blob';
+    xhr.onload = function() {
+        if (xhr.status === 200) {
+            var blob = xhr.response;
+            var timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            var filename = 'dpi_export_' + timestamp + '.' + format;
+            if (window.navigator.msSaveOrOpenBlob) {
+                window.navigator.msSaveOrOpenBlob(blob, filename);
+            } else {
+                var url = URL.createObjectURL(blob);
+                var a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                a.style.display = 'none';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+        } else {
+            alert('Export failed: HTTP ' + xhr.status);
+        }
+    };
+    xhr.onerror = function() {
+        alert('Export failed: network error');
+    };
+    xhr.send();
 }
 
-// Auto-refresh every 30 seconds
 setInterval(refreshStats, 30000);
-document.addEventListener("DOMContentLoaded", refreshStats);
-</script>
+document.addEventListener('DOMContentLoaded', refreshStats);
+//]]></script>
 
-<style>
-.dashboard-widget { margin-bottom: 20px; }
-.table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
-.table td, .table th { border: 1px solid #ddd; padding: 6px; text-align: left; }
-.table th { background-color: #f8f9fa; }
-pre { background: #f8f9fa; padding: 10px; border-radius: 4px; white-space: pre-wrap; }
-</style>
-
-<h2>DPI Logs</h2>
-<div id="dpi-stats-container">Loading...</div>
+<%+footer%>

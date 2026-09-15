@@ -11,16 +11,17 @@ function index()
     end
 
     -- Register the menu entry under Services
+    -- Note: no .leaf = true on parent so child entries can be dispatched
     entry({"admin", "services", "gl_dpi_logs"},
           template("gl-dpi-logs/overview"),
           _("DPI Logs"),
-          60).leaf = true
+          60)
 
-    -- API endpoints for exporting data
-    entry({"admin", "services", "gl_dpi_logs", "data"},
+    -- API endpoints for data and export (flat paths, following the hwnat pattern)
+    entry({"admin", "services", "gl_dpi_logs_data"},
           call("get_dpi_data")).leaf = true
 
-    entry({"admin", "services", "gl_dpi_logs", "export"},
+    entry({"admin", "services", "gl_dpi_logs_export"},
           call("export_data")).leaf = true
 end
 
@@ -31,7 +32,7 @@ function get_dpi_data()
         qos_stats = {},
         content_protection = {},
         blocked_domains = {},
-        firewall_counters = {},
+        firewall_counters = {rules = {}},
         netify_info = {},
         config = {}
     }
@@ -98,7 +99,9 @@ function get_dpi_data()
         local output = handle:read("*a")
         handle:close()
         if output then
+            data.firewall_counters = data.firewall_counters or {}
             data.firewall_counters.raw = output
+            data.firewall_counters.rules = data.firewall_counters.rules or {}
             -- Parse packet counts
             for pkts, bytes, target in output:gmatch("(%d+)%s+(%d+)%s+(%S+)") do
                 table.insert(data.firewall_counters.rules, {
