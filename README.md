@@ -18,7 +18,7 @@ A LuCI app for exporting **DPI (Deep Packet Inspection)** and **Content Filterin
 
 ### Prerequisites
 
-- GL.iNet Flint 4 router (tested on model **GL-AX1800 v2** running OpenWrt 21.02)
+- GL.iNet Flint 4 router (tested on model **GL-BE14000** running OpenWrt 21.02-SNAPSHOT, MediaTek MT7988 Filogic 800, aarch64)
   - *Other GL.iNet models may work but are untested — use at your own risk.*
 - SSH access to the router
 - At least 1MB free flash storage
