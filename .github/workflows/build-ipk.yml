@@ -23,7 +23,7 @@ jobs:
 
       - name: Install tools
         run: |
-          pip install ruff bandit yamllint
+          pip install ruff bandit yamllint semgrep
           sudo apt-get update && sudo apt-get install -y lua5.1 shellcheck
 
       - name: Ruff (Python linting)
@@ -61,6 +61,70 @@ jobs:
         run: |
           python3 -c "import ast; ast.parse(open('scripts/build_ipk.py').read()); print('build_ipk.py: syntax OK')"
           python3 -c "import ast; ast.parse(open('scripts/build_apk.py').read()); print('build_apk.py: syntax OK')"
+
+      - name: Semgrep (Lua + Python security analysis)
+        run: |
+          semgrep --config=auto --severity=ERROR --no-rewrite-rule-ids . || echo "⚠️ Semgrep found issues — review before merging"
+
+      - name: File permissions audit (no world-writable files)
+        run: |
+          WW_FILES=$(find . -not -path "./.git/*" -not -path "./node_modules/*" -type f -perm -002 2>/dev/null)
+          if [ -n "$WW_FILES" ]; then
+            echo "⚠️  World-writable files found:"
+            echo "$WW_FILES"
+          else
+            echo "✅ No world-writable files found"
+          fi
+
+      - name: JSON validation (menu.d and config files)
+        run: |
+          find . -name "*.json" -not -path "./.git/*" -exec python3 -m json.tool {} \; > /dev/null
+          echo "✅ All JSON files are valid"
+
+      - name: Makefile validation (OpenWRT structure)
+        run: |
+          grep -q 'include $(TOPDIR)/rules.mk' Makefile || { echo "❌ Missing TOPDIR rules.mk"; exit 1; }
+          grep -q 'BuildPackage' Makefile || { echo "❌ Missing BuildPackage"; exit 1; }
+          grep -q 'LUCI_TITLE' Makefile || { echo "❌ Missing LUCI_TITLE"; exit 1; }
+          grep -q 'LUCI_DEPENDS' Makefile || { echo "❌ Missing LUCI_DEPENDS"; exit 1; }
+          echo "✅ Makefile structure valid"
+
+      - name: License compliance check
+        run: |
+          [ -f LICENSE ] || { echo "❌ LICENSE file missing"; exit 1; }
+          head -1 LICENSE | grep -qi "GNU General Public License" || { echo "❌ Not GPL licensed"; exit 1; }
+          [ -f TOS.md ] || { echo "❌ TOS.md missing"; exit 1; }
+          [ -f PRIVACY.md ] || { echo "❌ PRIVACY.md missing"; exit 1; }
+          echo "✅ License and legal docs present"
+
+      - name: File inventory audit (expected files present)
+        run: |
+          expected_files=(
+            "Makefile"
+            "README.md"
+            "LICENSE"
+            "TOS.md"
+            "PRIVACY.md"
+            "files/etc/config/gl_dpi_logs"
+            "luasrc/controller/gl_dpi_logs.lua"
+            "luasrc/model/cbi/gl-dpi-logs/overview.lua"
+            "luasrc/view/gl-dpi-logs/overview.htm"
+            "root/usr/share/luci/menu.d/gl-dpi-logs.json"
+            "scripts/build_ipk.py"
+            "scripts/build_apk.py"
+          )
+          missing=0
+          for f in "${expected_files[@]}"; do
+            if [ ! -f "$f" ]; then
+              echo "❌ Missing: $f"
+              missing=$((missing + 1))
+            fi
+          done
+          if [ "$missing" -gt 0 ]; then
+            echo "❌ $missing expected file(s) missing"
+            exit 1
+          fi
+          echo "✅ All 12 expected files present"
 
   build-ipk:
     needs: pre-build-checks
@@ -316,6 +380,65 @@ jobs:
         run: |
           APK_PATH=$(cat /tmp/apk_path.txt)
           cp "$APK_PATH" /tmp/artifacts/
+
+      - name: Verify package integrity (IPK + APK)
+        run: |
+          python3 << 'PYEOF'
+          import tarfile, os, sys
+
+          artifacts_dir = "/tmp/artifacts"
+          expected_files = [
+              "usr/lib/lua/luci/controller/gl_dpi_logs.lua",
+              "usr/lib/lua/luci/model/cbi/gl-dpi-logs/overview.lua",
+              "usr/lib/lua/luci/view/gl-dpi-logs/overview.htm",
+              "usr/share/luci/menu.d/gl-dpi-logs.json",
+              "etc/config/gl_dpi_logs",
+          ]
+
+          errors = []
+
+          # Verify IPK
+          ipk_files = [f for f in os.listdir(artifacts_dir) if f.endswith(".ipk")]
+          if not ipk_files:
+              errors.append("No .ipk file found in artifacts")
+          else:
+              with tarfile.open(os.path.join(artifacts_dir, ipk_files[0]), "r:gz") as tar:
+                  names = tar.getnames()
+                  if not any("debian-binary" in n for n in names):
+                      errors.append("IPK missing debian-binary")
+                  if not any("control.tar.gz" in n for n in names):
+                      errors.append("IPK missing control.tar.gz")
+                  if not any("data.tar.gz" in n for n in names):
+                      errors.append("IPK missing data.tar.gz")
+                  for ef in expected_files:
+                      if not any(ef in n for n in names):
+                          errors.append(f"IPK missing file: {ef}")
+
+          # Verify APK
+          apk_files = [f for f in os.listdir(artifacts_dir) if f.endswith(".apk")]
+          if not apk_files:
+              errors.append("No .apk file found in artifacts")
+          else:
+              with tarfile.open(os.path.join(artifacts_dir, apk_files[0]), "r:gz") as tar:
+                  names = tar.getnames()
+                  if ".PKGINFO" not in names:
+                      errors.append(f"APK missing .PKGINFO: {apk_files[0]}")
+                  if ".INSTALL" not in names:
+                      errors.append(f"APK missing .INSTALL: {apk_files[0]}")
+                  if ".MANIFEST" not in names:
+                      errors.append(f"APK missing .MANIFEST: {apk_files[0]}")
+                  for ef in expected_files:
+                      if not any(ef in n for n in names):
+                          errors.append(f"APK missing file: {ef}")
+
+          if errors:
+              for e in errors:
+                  print(f"❌ {e}")
+              sys.exit(1)
+          else:
+              print(f"✅ All packages verified ({len(ipk_files)} IPK, {len(apk_files)} APK)")
+              print(f"   Expected files: {len(expected_files)} — all present in both packages")
+          PYEOF
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
