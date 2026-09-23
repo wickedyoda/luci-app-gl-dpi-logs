@@ -164,6 +164,105 @@ jobs:
           tar -czf /tmp/artifacts/luci-app-gl-dpi-logs-${{ env.PKG_RELEASE }}-manual.tar.gz \
             -C /tmp/pkgbuild usr etc
 
+      - name: Write PKGINFO (OpenWrt 25.xx APK)
+        run: |
+          printf 'pkgname = luci-app-gl-dpi-logs\npkgver = %s-r0\npkgdesc = LuCI app for exporting DPI and content filtering logs from GL.iNet routers\nurl = https://github.com/wickedyoda/luci-app-gl-dpi-logs\nlicense = GPL-3.0-or-later\narch = all\ndepends = luci-base\ndepends = luci-lib-jsonc\nmaintainer = WickedYoda\n' "${BUILD_VERSION}" > /tmp/pkgbuild/.PKGINFO
+          printf 'post-install() {\n\tmkdir -p /usr/lib/lua/luci/view/gl-dpi-logs\n\tmkdir -p /usr/lib/lua/luci/model/cbi/gl-dpi-logs\n\texit 0\n}\n' > /tmp/pkgbuild/.INSTALL
+
+      - name: Build APK (Alpine format for OpenWrt 25.xx)
+        run: |
+          python3 << 'PYEOF'
+          import os, tarfile, io, gzip
+
+          build_version = os.environ["BUILD_VERSION"]
+          output_apk = f"/tmp/luci-app-gl-dpi-logs-{build_version}-r0_all.apk"
+          src_dir = "/tmp/pkgbuild"
+
+          # Read .PKGINFO and .INSTALL
+          with open(f"{src_dir}/.PKGINFO", "r") as f:
+              pkginfo = f.read().encode("utf-8")
+          with open(f"{src_dir}/.INSTALL", "r") as f:
+              install = f.read().encode("utf-8")
+
+          # Collect files for manifest
+          manifest_lines = []
+          all_dirs = set()
+          files_to_add = []
+          for root, dirs, files in os.walk(src_dir):
+              for fname in sorted(files):
+                  if fname in ("control", "postinst", ".PKGINFO", ".INSTALL"):
+                      continue
+                  fpath = os.path.join(root, fname)
+                  relpath = os.path.relpath(fpath, src_dir)
+                  arcname = relpath.lstrip("/")
+                  manifest_lines.append(arcname)
+                  files_to_add.append((fpath, arcname))
+                  parts = arcname.split("/")
+                  for i in range(1, len(parts)):
+                      all_dirs.add("/".join(parts[:i]))
+          manifest = "\n".join(sorted(manifest_lines)) + "\n"
+
+          # Build uncompressed tar
+          apk_buf = io.BytesIO()
+          with tarfile.open(fileobj=apk_buf, mode="w") as tar:
+              # .PKGINFO
+              info = tarfile.TarInfo(name=".PKGINFO")
+              info.size = len(pkginfo)
+              info.mode = 0o644
+              info.uid = 0; info.gid = 0; info.uname = ""; info.gname = ""; info.mtime = 0
+              tar.addfile(info, io.BytesIO(pkginfo))
+              # .INSTALL
+              info = tarfile.TarInfo(name=".INSTALL")
+              info.size = len(install)
+              info.mode = 0o755
+              info.uid = 0; info.gid = 0; info.uname = ""; info.gname = ""; info.mtime = 0
+              tar.addfile(info, io.BytesIO(install))
+              # .MANIFEST
+              info = tarfile.TarInfo(name=".MANIFEST")
+              info.size = len(manifest.encode())
+              info.mode = 0o644
+              info.uid = 0; info.gid = 0; info.uname = ""; info.gname = ""; info.mtime = 0
+              tar.addfile(info, io.BytesIO(manifest.encode()))
+              # Directories
+              for dirpath in sorted(all_dirs):
+                  dinfo = tarfile.TarInfo(name=dirpath)
+                  dinfo.type = tarfile.DIRTYPE
+                  dinfo.mode = 0o755
+                  dinfo.uid = 0; dinfo.gid = 0; dinfo.uname = ""; dinfo.gname = ""; dinfo.mtime = 0
+                  tar.addfile(dinfo)
+              # Files
+              for fpath, arcname in sorted(files_to_add, key=lambda x: x[1]):
+                  info = tar.gettarinfo(fpath, arcname=arcname)
+                  info.uid = 0; info.gid = 0; info.uname = ""; info.gname = ""; info.mtime = 0
+                  with open(fpath, "rb") as f:
+                      tar.addfile(info, f)
+
+          # Gzip compress with mtime=0, OS=3 (Unix)
+          apk_data = apk_buf.getvalue()
+          apk_buf2 = io.BytesIO()
+          with gzip.GzipFile(fileobj=apk_buf2, mode="wb", mtime=0, compresslevel=6) as gz:
+              gz.write(apk_data)
+          apk_data = apk_buf2.getvalue()
+          apk_data = apk_data[:9] + b"\x03" + apk_data[10:]  # OS=3 (Unix)
+
+          with open(output_apk, "wb") as f:
+              f.write(apk_data)
+          print(f"Built: {output_apk} ({os.path.getsize(output_apk)} bytes)")
+          with open("/tmp/apk_path.txt", "w") as f:
+              f.write(output_apk)
+          # Verify
+          with tarfile.open(output_apk, "r:gz") as tar:
+              names = tar.getnames()
+              print(f"Entries: {len(names)}")
+              for n in sorted(names):
+                  print(f"  {n}")
+          PYEOF
+
+      - name: Copy APK to artifacts
+        run: |
+          APK_PATH=$(cat /tmp/apk_path.txt)
+          cp "$APK_PATH" /tmp/artifacts/
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
