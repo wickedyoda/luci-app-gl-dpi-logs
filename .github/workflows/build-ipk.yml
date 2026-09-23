@@ -401,12 +401,13 @@ jobs:
 
           errors = []
 
-          # Verify IPK
+          # Verify IPK — files are inside data.tar.gz (nested)
           ipk_files = [f for f in os.listdir(artifacts_dir) if f.endswith(".ipk")]
           if not ipk_files:
               errors.append("No .ipk file found in artifacts")
           else:
-              with tarfile.open(os.path.join(artifacts_dir, ipk_files[0]), "r:gz") as tar:
+              ipk_path = os.path.join(artifacts_dir, ipk_files[0])
+              with tarfile.open(ipk_path, "r:gz") as tar:
                   names = tar.getnames()
                   if not any("debian-binary" in n for n in names):
                       errors.append("IPK missing debian-binary")
@@ -414,8 +415,14 @@ jobs:
                       errors.append("IPK missing control.tar.gz")
                   if not any("data.tar.gz" in n for n in names):
                       errors.append("IPK missing data.tar.gz")
+              # Extract data.tar.gz and verify contents
+              with tarfile.open(ipk_path, "r:gz") as tar:
+                  data_member = tar.getmember("data.tar.gz")
+                  data_bytes = tar.extractfile(data_member).read()
+              with tarfile.open(fileobj=__import__('io').BytesIO(data_bytes), mode="r:gz") as data_tar:
+                  data_names = data_tar.getnames()
                   for ef in expected_files:
-                      if not any(ef in n for n in names):
+                      if not any(ef in n for n in data_names):
                           errors.append(f"IPK missing file: {ef}")
 
           # Verify APK
