@@ -109,9 +109,11 @@ jobs:
             "luasrc/controller/gl_dpi_logs.lua"
             "luasrc/model/cbi/gl-dpi-logs/overview.lua"
             "luasrc/view/gl-dpi-logs/overview.htm"
+            "luasrc/view/gl-dpi-logs/stats_display.htm"
             "root/usr/share/luci/menu.d/gl-dpi-logs.json"
             "scripts/build_ipk.py"
             "scripts/build_apk.py"
+            "ruff.toml"
           )
           missing=0
           for f in "${expected_files[@]}"; do

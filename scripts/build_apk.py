@@ -10,7 +10,11 @@ Format: gzip-compressed tar
 Usage:
   python3 build_apk.py [PKG_NAME] [PKG_VERSION] [PKG_RELEASE] [OUTPUT_APK] [SRC_DIR]
 """
-import os, tarfile, io, gzip, sys
+import gzip
+import io
+import os
+import sys
+import tarfile
 
 PKG_NAME = sys.argv[1] if len(sys.argv) > 1 else "luci-app-gl-dpi-logs"
 PKG_VERSION = sys.argv[2] if len(sys.argv) > 2 else "1.0.1"

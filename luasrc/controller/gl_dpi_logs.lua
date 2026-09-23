@@ -18,6 +18,15 @@
 
 module("luci.controller.gl_dpi_logs", package.seeall)
 
+-- Escape CSV cell values to prevent formula injection in spreadsheet apps
+local function csv_escape(val)
+    if string.sub(val, 1, 1) == "=" or string.sub(val, 1, 1) == "+" or
+       string.sub(val, 1, 1) == "-" or string.sub(val, 1, 1) == "@" then
+        return "'" .. val
+    end
+    return val
+end
+
 function index()
     -- Check if dependencies are available
     local fs = require "nixio.fs"
@@ -219,13 +228,13 @@ function export_data()
             if type(v) == "string" and not k:find("_backup") then
                 for key, val in v:gmatch("(%S+):(%d+)") do
                     local date = v:match("date:(%S+)") or ""
-                    csv = csv .. key .. "," .. val .. "," .. date .. "\n"
+                    csv = csv .. csv_escape(key) .. "," .. csv_escape(val) .. "," .. date .. "\n"
                 end
             end
         end
         if data.blocked_domains then
             for _, d in ipairs(data.blocked_domains) do
-                csv = csv .. "domain," .. d .. ",\n"
+                csv = csv .. "domain," .. csv_escape(d) .. ",\n"
             end
         end
         luci.http.write(csv)

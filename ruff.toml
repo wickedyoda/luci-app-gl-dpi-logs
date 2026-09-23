@@ -1,0 +1,12 @@
+# Ruff configuration for luci-app-gl-dpi-logs
+# https://docs.astral.sh/ruff/configuration/
+
+[lint]
+
+# EXE001: Shebang present but file not executable.
+# Scripts are invoked via `python3 scripts/build_*.py` in CI, not directly.
+ignore = ["EXE001"]
+
+[lint.isort]
+# Ensure imports are sorted for readability
+force-single-line = false

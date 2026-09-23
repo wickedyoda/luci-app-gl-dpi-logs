@@ -1,0 +1,9 @@
+<%
+-- stats_display.htm — Custom template for displaying QoS statistics
+-- Reads /tmp/qos_stats and displays in a safe <pre> block
+-- LuCI's <%= %> auto-escapes HTML to prevent XSS
+local fs = require "nixio.fs"
+local content = fs.readfile("/tmp/qos_stats") or ""
+%>
+<h3><%:QoS Statistics%></h3>
+<pre style="width:100%%; height:200px; overflow:auto; font-size:12px;"><%= content %></pre>
