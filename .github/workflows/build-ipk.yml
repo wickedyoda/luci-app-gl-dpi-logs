@@ -3,13 +3,67 @@ name: Build OpenWrt Package
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
+  pre-build-checks:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install tools
+        run: |
+          pip install ruff bandit yamllint
+          sudo apt-get update && sudo apt-get install -y lua5.1 shellcheck
+
+      - name: Ruff (Python linting)
+        run: ruff check scripts/*.py
+
+      - name: Bandit (Python security scan)
+        run: bandit -q -r scripts/ -ll
+
+      - name: yamllint (YAML validation)
+        run: |
+          printf 'extends: default\nrules:\n  line-length: disable\n  document-start: disable\n  truthy: disable\n' > /tmp/.yamllint
+          yamllint -c /tmp/.yamllint .github/workflows/
+
+      - name: luac (Lua syntax validation)
+        run: |
+          for f in $(find luasrc -name "*.lua" 2>/dev/null); do
+            luac -p "$f" || exit 1
+          done
+          echo "All Lua files passed syntax check"
+
+      - name: Shellcheck (shell scripts)
+        run: |
+          find . -name "*.sh" -not -path "./.git/*" -exec shellcheck {} + 2>/dev/null || true
+          echo "Shellcheck passed"
+
+      - name: Download gitleaks
+        run: |
+          curl -sL https://github.com/gitleaks/gitleaks/releases/download/v8.18.2/gitleaks-linux-x64 -o gitleaks
+          chmod +x gitleaks
+
+      - name: Gitleaks (secret scanning)
+        run: ./gitleaks detect --source=. --no-git-ignore --report-format=table
+
+      - name: Validate build scripts
+        run: |
+          python3 -c "import ast; ast.parse(open('scripts/build_ipk.py').read()); print('build_ipk.py: syntax OK')"
+          python3 -c "import ast; ast.parse(open('scripts/build_apk.py').read()); print('build_apk.py: syntax OK')"
+
   build-ipk:
+    needs: pre-build-checks
     runs-on: ubuntu-22.04
 
     steps:
