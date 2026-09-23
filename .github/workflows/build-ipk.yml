@@ -415,17 +415,17 @@ jobs:
                       errors.append("IPK missing control.tar.gz")
                   if not any("data.tar.gz" in n for n in names):
                       errors.append("IPK missing data.tar.gz")
-                # Handle ./ prefix in IPK tar member names
-                for candidate in ["./data.tar.gz", "data.tar.gz"]:
-                    if candidate in names:
-                        data_member = tar.getmember(candidate)
-                        data_bytes = tar.extractfile(data_member).read()
-                        with tarfile.open(fileobj=__import__('io').BytesIO(data_bytes), mode="r:gz") as data_tar:
-                            data_names = data_tar.getnames()
-                            for ef in expected_files:
-                                if not any(ef in n for n in data_names):
-                                    errors.append(f"IPK missing file: {ef}")
-                            break
+                  # Handle ./ prefix in IPK tar member names
+                  for candidate in ["./data.tar.gz", "data.tar.gz"]:
+                      if candidate in names:
+                          data_member = tar.getmember(candidate)
+                          data_bytes = tar.extractfile(data_member).read()
+                          with tarfile.open(fileobj=__import__('io').BytesIO(data_bytes), mode="r:gz") as data_tar:
+                              data_names = data_tar.getnames()
+                              for ef in expected_files:
+                                  if not any(ef in n for n in data_names):
+                                      errors.append(f"IPK missing file: {ef}")
+                              break
 
           # Verify APK
           apk_files = [f for f in os.listdir(artifacts_dir) if f.endswith(".apk")]
