@@ -11,7 +11,11 @@ Outer: gzip(mtime=0, os=3, xfl=0) wrapping tar
       ├── ./dir entries (explicit dirs)
       └── ./file entries (all paths ./ prefixed)
 """
-import os, tarfile, io, gzip, sys
+import gzip
+import io
+import os
+import sys
+import tarfile
 
 PKG_NAME = sys.argv[1] if len(sys.argv) > 1 else "luci-app-gl-dpi-logs-v1.01"
 PKG_VERSION = sys.argv[2] if len(sys.argv) > 2 else "1.0.1"

@@ -2,6 +2,7 @@
 
 ![License](https://img.shields.io/badge/license-GPLv3%20or%20later-blue.svg)
 ![OpenWrt](https://img.shields.io/badge/OpenWrt-21.02%2B-orange)
+![OpenWrt 25.xx](https://img.shields.io/badge/OpenWrt%2025.xx-APK-blue)
 ![GL.iNet](https://img.shields.io/badge/GL.iNet-Flint%204-lightgrey)
 
 A LuCI app for exporting **DPI (Deep Packet Inspection)** and **Content Filtering logs** from GL.iNet routers running OpenWrt.
@@ -36,6 +37,25 @@ ssh -p <ssh-port> -i ~/.ssh/id_ed25519_flint4 root@<router-ip>
 # Install the package
 opkg update
 opkg install /tmp/luci-app-gl-dpi-logs_*.ipk
+
+# Restart uhttpd to load the new controller
+/etc/init.d/uhttpd restart
+```
+
+### OpenWrt 25.xx (APK format)
+
+For routers running OpenWrt 25.xx with the `apk` package manager:
+
+```bash
+# Copy the APK to your router's /tmp directory
+scp -P <ssh-port> -i ~/.ssh/id_ed25519_flint4 \
+  bin/luci-app-gl-dpi-logs_*.apk root@<router-ip>:/tmp/
+
+# SSH into the router
+ssh -p <ssh-port> -i ~/.ssh/id_ed25519_flint4 root@<router-ip>
+
+# Install the APK package
+apk add /tmp/luci-app-gl-dpi-logs-*.apk
 
 # Restart uhttpd to load the new controller
 /etc/init.d/uhttpd restart
@@ -137,6 +157,27 @@ cd luci-app-gl-dpi-logs
 #   ./scripts/feeds install -a -p luci-app-gl-dpi-logs
 #   make menuconfig  # select the package under LuCI applications
 #   make package/luci-app-gl-dpi-logs/compile
+```
+
+### GitHub Actions Builds
+
+Both IPK (OpenWrt 21.02+) and APK (OpenWrt 25.xx) packages are built automatically
+on every push to `main` and available as workflow artifacts. Manual dispatch creates
+a GitHub Release with both package formats.
+
+| Format | OpenWrt Version | Package Manager | File Extension |
+|--------|-----------------|-----------------|-----------------|
+| IPK    | 21.02+          | `opkg`          | `.ipk`          |
+| APK    | 25.xx           | `apk`           | `.apk`          |
+
+To build locally:
+
+```bash
+# IPK (OpenWrt 21.02+)
+python3 scripts/build_ipk.py
+
+# APK (OpenWrt 25.xx)
+python3 scripts/build_apk.py
 ```
 
 ## License
