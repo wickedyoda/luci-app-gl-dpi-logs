@@ -52,13 +52,12 @@ jobs:
           find . -name "*.sh" -not -path "./.git/*" -exec shellcheck {} + 2>/dev/null || true
           echo "Shellcheck passed"
 
-      - name: Download gitleaks
-        run: |
-          curl -sL https://github.com/gitleaks/gitleaks/releases/download/v8.18.2/gitleaks_linux_x64 -o gitleaks
-          chmod +x gitleaks
-
-      - name: Gitleaks (secret scanning)
-        run: ./gitleaks detect --source=. --no-git-ignore --report-format=table
+      - name: Gitleaks (secret scanning via GitHub Action)
+        uses: gitleaks/gitleaks-action@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Validate build scripts
         run: |
