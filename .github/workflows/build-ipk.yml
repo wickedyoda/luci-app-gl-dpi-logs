@@ -30,7 +30,10 @@ jobs:
         run: ruff check scripts/*.py
 
       - name: Bandit (Python security scan)
-        run: bandit -q -r scripts/ -ll
+        run: |
+          # B108 (hardcoded /tmp/) is a false positive for build scripts that
+          # intentionally output packages to /tmp/ — not a temp-file vulnerability
+          bandit -q -r scripts/ -ll --skip B108
 
       - name: yamllint (YAML validation)
         run: |
