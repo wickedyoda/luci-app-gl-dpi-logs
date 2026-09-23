@@ -419,7 +419,7 @@ jobs:
               with tarfile.open(ipk_path, "r:gz") as tar:
                   data_member = tar.getmember("data.tar.gz")
                   data_bytes = tar.extractfile(data_member).read()
-              with tarfile.open(fileobj=__import__('io').BytesIO(data_bytes), "r:gz") as data_tar:
+              with tarfile.open(fileobj=__import__("io").BytesIO(data_bytes), mode="r:gz") as data_tar:
                   data_names = data_tar.getnames()
                   for ef in expected_files:
                       if not any(ef in n for n in data_names):
