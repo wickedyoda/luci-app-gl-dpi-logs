@@ -54,8 +54,6 @@ jobs:
 
       - name: Gitleaks (secret scanning via GitHub Action)
         uses: gitleaks/gitleaks-action@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
