@@ -54,8 +54,8 @@ jobs:
 
       - name: Gitleaks (secret scanning)
         run: |
-          # Install gitleaks binary
-          wget -q "https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks-linux-amd64" -O /tmp/gitleaks
+          # Install gitleaks binary (curl follows GitHub redirects)
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks-linux-amd64" -o /tmp/gitleaks
           chmod +x /tmp/gitleaks
           # Scan working directory (not Git history — shallow clone breaks Git repo scan)
           /tmp/gitleaks detect --source=. --no-git --report-format=sarif --report-path=gitleaks-results.sarif || true
