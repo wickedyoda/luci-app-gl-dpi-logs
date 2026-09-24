@@ -54,9 +54,11 @@ jobs:
 
       - name: Gitleaks (secret scanning)
         run: |
-          # Install gitleaks binary (curl follows GitHub redirects)
-          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks-linux-amd64" -o /tmp/gitleaks
-          chmod +x /tmp/gitleaks
+          # Install gitleaks binary (asset is a tar.gz with underscore naming)
+          curl -s https://api.github.com/repos/gitleaks/gitleaks/releases/latest \
+            | python3 -c "import json,sys; a=json.load(sys.stdin)['assets']; print([x for x in a if 'linux' in x['name'] and 'x64' in x['name']][0]['browser_download_url'])" \
+            | xargs curl -sSL -o /tmp/gitleaks.tar.gz
+          tar xzf /tmp/gitleaks.tar.gz -C /tmp/
           # Scan working directory (not Git history — shallow clone breaks Git repo scan)
           /tmp/gitleaks detect --source=. --no-git --report-format=sarif --report-path=gitleaks-results.sarif || true
           echo "✅ Gitleaks scan completed"
